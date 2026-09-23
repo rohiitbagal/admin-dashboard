@@ -1,9 +1,11 @@
 import { useSearchParams } from 'react-router-dom';
 import { useProducts } from '../hooks/useProducts';
+import { useDebounce } from '../hooks/useDebounce';
 import ProductTable from '../components/ProductTable';
 import Pagination from '../components/Pagination';
-import { Loader2, Plus, AlertCircle } from 'lucide-react';
+import { Loader2, Plus, AlertCircle, Search, Filter } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import api from '../services/api';
 
 export default function Products() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -19,6 +21,36 @@ export default function Products() {
   const category = searchParams.get('category') || 'all';
   const sortBy = searchParams.get('sortBy') || '';
   const order = searchParams.get('order') || 'asc';
+  
+  // Local state for immediate input feedback
+  const [searchInput, setSearchInput] = useState(search);
+  const debouncedSearch = useDebounce(searchInput, 500);
+
+  const [categories, setCategories] = useState([]);
+  
+  // Fetch categories on mount
+  useEffect(() => {
+    api.get('/products/categories')
+      .then(res => setCategories(res.data))
+      .catch(err => console.error("Failed to load categories", err));
+  }, []);
+
+  // Update URL when debounced search changes
+  useEffect(() => {
+    if (debouncedSearch !== search) {
+      setSearchParams(prev => {
+        if (debouncedSearch) {
+          prev.set('q', debouncedSearch);
+          // API doesn't support both q and category, so clear category
+          prev.delete('category');
+        } else {
+          prev.delete('q');
+        }
+        prev.set('page', 1);
+        return prev;
+      });
+    }
+  }, [debouncedSearch, search, setSearchParams]);
 
   const { products, total, isLoading, error } = useProducts({
     page,
@@ -65,6 +97,38 @@ export default function Products() {
     // TODO: implement delete confirm
   };
 
+  const handleCategoryChange = (e) => {
+    const val = e.target.value;
+    setSearchParams(prev => {
+      if (val === 'all') {
+        prev.delete('category');
+      } else {
+        prev.set('category', val);
+        // Clear search when category is selected
+        prev.delete('q');
+        setSearchInput('');
+      }
+      prev.set('page', 1);
+      return prev;
+    });
+  };
+
+  const handleSortChange = (e) => {
+    const val = e.target.value;
+    setSearchParams(prev => {
+      if (!val) {
+        prev.delete('sortBy');
+        prev.delete('order');
+      } else {
+        const [sort, ord] = val.split('-');
+        prev.set('sortBy', sort);
+        prev.set('order', ord);
+      }
+      prev.set('page', 1);
+      return prev;
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="sm:flex sm:items-center sm:justify-between">
@@ -87,8 +151,60 @@ export default function Products() {
         </div>
       </div>
 
-      {/* TODO: Filters and Search bar will go here */}
+      {/* Filters and Search */}
+      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-col sm:flex-row gap-4 items-center justify-between">
+        <div className="relative w-full sm:max-w-xs">
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+            <Search className="h-4 w-4 text-gray-400" aria-hidden="true" />
+          </div>
+          <input
+            type="text"
+            className="block w-full rounded-md border border-gray-300 py-2 pl-10 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+            placeholder="Search products..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+        </div>
+        
+        <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-gray-500" />
+            <select
+              className="block w-full rounded-md border border-gray-300 py-2 pl-3 pr-8 text-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+              value={category}
+              onChange={handleCategoryChange}
+              disabled={!!searchInput} // Disable category if searching
+            >
+              <option value="all">All Categories</option>
+              {categories.map(cat => (
+                <option key={cat.slug || cat} value={cat.slug || cat}>
+                  {cat.name || cat}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          <select
+            className="block w-full rounded-md border border-gray-300 py-2 pl-3 pr-8 text-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+            value={sortBy ? `${sortBy}-${order}` : ''}
+            onChange={handleSortChange}
+          >
+            <option value="">Sort by: None</option>
+            <option value="price-asc">Price: Low to High</option>
+            <option value="price-desc">Price: High to Low</option>
+            <option value="rating-desc">Rating: Highest</option>
+            <option value="rating-asc">Rating: Lowest</option>
+            <option value="title-asc">Title: A-Z</option>
+            <option value="title-desc">Title: Z-A</option>
+          </select>
+        </div>
+      </div>
       
+      {!!searchInput && (
+        <p className="text-sm text-gray-500">
+          Showing search results for "{searchInput}". Category filters are disabled during search.
+        </p>
+      )}
       {error && (
         <div className="rounded-md bg-red-50 p-4">
           <div className="flex">
