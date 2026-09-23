@@ -3,7 +3,9 @@ import { useProducts } from '../hooks/useProducts';
 import { useDebounce } from '../hooks/useDebounce';
 import ProductTable from '../components/ProductTable';
 import Pagination from '../components/Pagination';
-import { Loader2, Plus, AlertCircle, Search, Filter } from 'lucide-react';
+import Modal from '../components/Modal';
+import ProductForm from '../components/ProductForm';
+import { Loader2, Plus, AlertCircle, Search, Filter, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import api from '../services/api';
 
@@ -68,6 +70,12 @@ export default function Products() {
   // We will handle fake Add/Edit/Delete fully in a later step.
   const [localProducts, setLocalProducts] = useState([]);
   
+  // Modal states
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  
   useEffect(() => {
     setLocalProducts(products);
   }, [products]);
@@ -87,14 +95,49 @@ export default function Products() {
     });
   };
 
+  const handleAddClick = () => {
+    setSelectedProduct(null);
+    setIsFormModalOpen(true);
+  };
+
   const handleEdit = (product) => {
-    console.log('Edit', product);
-    // TODO: implement edit modal
+    setSelectedProduct(product);
+    setIsFormModalOpen(true);
   };
 
   const handleDelete = (product) => {
-    console.log('Delete', product);
-    // TODO: implement delete confirm
+    setSelectedProduct(product);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleFormSuccess = (savedProduct) => {
+    setIsFormModalOpen(false);
+    
+    // Fake persistence: Update local state
+    if (selectedProduct) {
+      // It was an edit
+      setLocalProducts(prev => prev.map(p => p.id === savedProduct.id ? { ...p, ...savedProduct } : p));
+    } else {
+      // It was an add - DummyJSON returns the new object with a new ID
+      // We prepend it to the list
+      setLocalProducts(prev => [savedProduct, ...prev]);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!selectedProduct) return;
+    setIsDeleting(true);
+    try {
+      await api.delete(`/products/${selectedProduct.id}`);
+      // Fake persistence: Remove from local state
+      setLocalProducts(prev => prev.filter(p => p.id !== selectedProduct.id));
+      setIsDeleteModalOpen(false);
+    } catch (err) {
+      console.error("Failed to delete", err);
+      alert("Failed to delete product. Please try again.");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleCategoryChange = (e) => {
@@ -143,6 +186,7 @@ export default function Products() {
         <div className="mt-4 sm:mt-0">
           <button
             type="button"
+            onClick={handleAddClick}
             className="inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
           >
             <Plus className="-ml-0.5 mr-1.5 h-5 w-5" aria-hidden="true" />
@@ -259,6 +303,58 @@ export default function Products() {
           )}
         </>
       )}
+
+      {/* Add/Edit Modal */}
+      <Modal 
+        isOpen={isFormModalOpen} 
+        onClose={() => setIsFormModalOpen(false)}
+        title={selectedProduct ? 'Edit Product' : 'Add New Product'}
+      >
+        <ProductForm 
+          product={selectedProduct} 
+          onSuccess={handleFormSuccess} 
+          onCancel={() => setIsFormModalOpen(false)} 
+        />
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        title="Confirm Delete"
+      >
+        <div className="sm:flex sm:items-start">
+          <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+            <Trash2 className="h-6 w-6 text-red-600" aria-hidden="true" />
+          </div>
+          <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+            <div className="mt-2">
+              <p className="text-sm text-gray-500">
+                Are you sure you want to delete <strong>{selectedProduct?.title}</strong>? This action cannot be undone.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+          <button
+            type="button"
+            onClick={confirmDelete}
+            disabled={isDeleting}
+            className="inline-flex w-full justify-center rounded-md border border-transparent bg-red-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
+          >
+            {isDeleting ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : null}
+            Delete
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsDeleteModalOpen(false)}
+            disabled={isDeleting}
+            className="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:mt-0 sm:w-auto sm:text-sm"
+          >
+            Cancel
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
